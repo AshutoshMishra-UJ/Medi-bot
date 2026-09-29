@@ -1,0 +1,32 @@
+{
+  "name": "medibot",
+  "version": "1.0.0",
+  "private": true,
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev:gateway": "npm run dev --workspace=apps/api-gateway",
+    "dev:patient": "npm run dev --workspace=apps/patient-service",
+    "dev:docs": "npm run dev --workspace=apps/document-service",
+    "dev:orchestrator": "npm run dev --workspace=apps/orchestrator-service",
+    "dev:llm": "npm run dev --workspace=apps/llm-gateway",
+    "dev:rules": "npm run dev --workspace=apps/clinical-rules",
+    "db:migrate": "npx prisma migrate dev --schema=./prisma/schema.prisma",
+    "db:studio": "npx prisma studio --schema=./prisma/schema.prisma",
+    "db:generate": "npx prisma generate --schema=./prisma/schema.prisma",
+    "db:reset": "npx prisma migrate reset --schema=./prisma/schema.prisma --force",
+    "dev:all": "concurrently \"npm run dev:gateway\" \"npm run dev:patient\" \"npm run dev:docs\" \"npm run dev:orchestrator\" \"npm run dev:llm\" \"npm run dev:rules\""
+  },
+  "devDependencies": {
+    "concurrently": "^8.2.2",
+    "prisma": "^5.22.0",
+    "typescript": "^5.6.3"
+  },
+  "dependencies": {
+    "@prisma/client": "^5.22.0",
+    "axios": "^1.20.0",
+    "openai": "^7.20.0"
+  }
+}

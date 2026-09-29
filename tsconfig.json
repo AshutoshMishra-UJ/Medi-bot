@@ -1,0 +1,24 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "CommonJS",
+    "moduleResolution": "node",
+    "lib": ["ES2022"],
+    "strict": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true,
+    "resolveJsonModule": true,
+    "declaration": true,
+    "declarationMap": true,
+    "sourceMap": true,
+    "outDir": "./dist",
+    "baseUrl": ".",
+    "paths": {
+      "@medibot/db":     ["./packages/db/src/index.ts"],
+      "@medibot/types":  ["./packages/types/src/index.ts"],
+      "@medibot/config": ["./packages/config/src/index.ts"]
+    }
+  },
+  "exclude": ["node_modules", "dist", "**/*.test.ts"]
+}

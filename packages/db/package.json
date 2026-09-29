@@ -1,0 +1,10 @@
+{
+  "name": "@medibot/db",
+  "version": "1.0.0",
+  "main": "src/index.ts",
+  "types": "src/index.ts",
+  "private": true,
+  "dependencies": {
+    "@prisma/client": "^5.22.0"
+  }
+}

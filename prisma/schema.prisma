@@ -1,0 +1,415 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ─── USER & AUTH ─────────────────────────────────────────────────────────────
+// MERGE NOTE: On merge with main app, replace this model with a FK reference
+// to the main app's User model. Update the @relation on PatientProfile accordingly.
+model User {
+  userId       String   @id @default(uuid()) @map("user_id")
+  email        String   @unique
+  passwordHash String   @map("password_hash")
+  status       String   @default("active") // active | suspended | deleted
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  profile   PatientProfile?
+  consents  Consent[]
+  auditLogs AuditLog[]
+
+  @@map("users")
+}
+
+// ─── CONSENT ─────────────────────────────────────────────────────────────────
+model Consent {
+  consentId String    @id @default(uuid()) @map("consent_id")
+  userId    String    @map("user_id")
+  scope     String    // data_access | document_upload | wearable_sync | ai_processing
+  granted   Boolean
+  grantedAt DateTime? @map("granted_at")
+  revokedAt DateTime? @map("revoked_at")
+  createdAt DateTime  @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [userId], onDelete: Cascade)
+
+  @@index([userId, scope])
+  @@map("consents")
+}
+
+// ─── AUDIT LOG ───────────────────────────────────────────────────────────────
+model AuditLog {
+  logId      String   @id @default(uuid()) @map("log_id")
+  userId     String?  @map("user_id")
+  action     String   // HTTP method: GET | POST | PUT | DELETE | PATCH
+  resource   String   // request path
+  resourceId String?  @map("resource_id")
+  ipAddress  String?  @map("ip_address")
+  userAgent  String?  @map("user_agent")
+  statusCode Int?     @map("status_code")
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  user User? @relation(fields: [userId], references: [userId], onDelete: SetNull)
+
+  @@map("audit_logs")
+}
+
+// ─── PATIENT 360 ─────────────────────────────────────────────────────────────
+model PatientProfile {
+  patientId   String    @id @default(uuid()) @map("patient_id")
+  userId      String    @unique @map("user_id")
+  dateOfBirth DateTime? @map("date_of_birth")
+  sex         String? // male | female | other | prefer_not_to_say
+  bloodGroup  String?   @map("blood_group") // A+ | A- | B+ | B- | AB+ | AB- | O+ | O-
+  preferences Json? // { language, units, notifications, timezone }
+  createdAt   DateTime  @default(now()) @map("created_at")
+  updatedAt   DateTime  @updatedAt @map("updated_at")
+
+  user       User               @relation(fields: [userId], references: [userId], onDelete: Cascade)
+  conditions MedicalCondition[]
+  allergies  Allergy[]
+  medications Medication[]
+  labResults LabResult[]
+  encounters Encounter[]
+  documents  HealthDocument[]
+  events     HealthEvent[]
+  wearings   WearableReading[]
+  trends     WearableTrend[]
+
+  @@map("patient_profiles")
+}
+
+// ─── MEDICAL CONDITIONS ──────────────────────────────────────────────────────
+model MedicalCondition {
+  conditionId  String    @id @default(uuid()) @map("condition_id")
+  patientId    String    @map("patient_id")
+  name         String
+  icdCode      String?   @map("icd_code")
+  status       String    @default("active") // active | resolved | chronic
+  onsetDate    DateTime? @map("onset_date")
+  deletedAt    DateTime? @map("deleted_at") // soft-delete only — NEVER hard delete
+  createdAt    DateTime  @default(now()) @map("created_at")
+  provenanceId String?   @map("provenance_id")
+
+  patient    PatientProfile @relation(fields: [patientId], references: [patientId], onDelete: Cascade)
+  provenance Provenance?    @relation(fields: [provenanceId], references: [sourceId])
+
+  @@index([patientId, status])
+  @@map("medical_conditions")
+}
+
+// ─── ALLERGIES ───────────────────────────────────────────────────────────────
+model Allergy {
+  allergyId    String    @id @default(uuid()) @map("allergy_id")
+  patientId    String    @map("patient_id")
+  substance    String
+  reaction     String?
+  severity     String? // mild | moderate | severe | life-threatening
+  onsetDate    DateTime? @map("onset_date")
+  deletedAt    DateTime? @map("deleted_at")
+  createdAt    DateTime  @default(now()) @map("created_at")
+  provenanceId String?   @map("provenance_id")
+
+  patient    PatientProfile @relation(fields: [patientId], references: [patientId], onDelete: Cascade)
+  provenance Provenance?    @relation(fields: [provenanceId], references: [sourceId])
+
+  @@index([patientId])
+  @@map("allergies")
+}
+
+// ─── MEDICATIONS ─────────────────────────────────────────────────────────────
+model Medication {
+  medicationId String    @id @default(uuid()) @map("medication_id")
+  patientId    String    @map("patient_id")
+  name         String
+  rxNormCode   String?   @map("rx_norm_code")
+  dose         String?
+  frequency    String?
+  route        String?
+  status       String    @default("active") // active | stopped | paused
+  startedAt    DateTime? @map("started_at")
+  stoppedAt    DateTime? @map("stopped_at")
+  deletedAt    DateTime? @map("deleted_at")
+  createdAt    DateTime  @default(now()) @map("created_at")
+  provenanceId String?   @map("provenance_id")
+
+  patient    PatientProfile @relation(fields: [patientId], references: [patientId], onDelete: Cascade)
+  provenance Provenance?    @relation(fields: [provenanceId], references: [sourceId])
+
+  @@index([patientId, status])
+  @@map("medications")
+}
+
+// ─── LAB RESULTS ─────────────────────────────────────────────────────────────
+model LabResult {
+  labId          String    @id @default(uuid()) @map("lab_id")
+  patientId      String    @map("patient_id")
+  testName       String    @map("test_name")
+  loincCode      String?   @map("loinc_code")
+  value          Float?
+  valueText      String?   @map("value_text")
+  unit           String?
+  referenceRange String?   @map("reference_range")
+  isAbnormal     Boolean?  @map("is_abnormal")
+  observedAt     DateTime  @map("observed_at")
+  deletedAt      DateTime? @map("deleted_at")
+  createdAt      DateTime  @default(now()) @map("created_at")
+  provenanceId   String?   @map("provenance_id")
+
+  patient    PatientProfile @relation(fields: [patientId], references: [patientId], onDelete: Cascade)
+  provenance Provenance?    @relation(fields: [provenanceId], references: [sourceId])
+
+  @@index([patientId, observedAt(sort: Desc)])
+  @@map("lab_results")
+}
+
+// ─── ENCOUNTERS & CONVERSATIONS ──────────────────────────────────────────────
+// NOTE: Orchestrator (Phase 3) writes to this. Schema must not change after Phase 2.
+model Encounter {
+  encounterId      String    @id @default(uuid()) @map("encounter_id")
+  patientId        String    @map("patient_id")
+  riskLevel        String    @default("LOW") @map("risk_level") // LOW | MEDIUM | HIGH
+  intent           String? // symptom | medication_query | record_query | general
+  status           String    @default("IN_PROGRESS") // IN_PROGRESS | COMPLETE | HIGH_RISK | ABANDONED
+  flaggedForReview Boolean   @default(false) @map("flagged_for_review")
+  modelVersion     String?   @map("model_version") // set by AI layer in Phase 3
+  startedAt        DateTime  @default(now()) @map("started_at")
+  endedAt          DateTime? @map("ended_at")
+  createdAt        DateTime  @default(now()) @map("created_at")
+
+  patient       PatientProfile @relation(fields: [patientId], references: [patientId], onDelete: Cascade)
+  conversations Conversation[]
+  toolCalls     ToolCall[]
+  modelRuns     ModelRun[]
+  events        HealthEvent[]
+  symptomState  SymptomState?
+
+  @@index([patientId, status])
+  @@map("encounters")
+}
+
+model Conversation {
+  conversationId String   @id @default(uuid()) @map("conversation_id")
+  encounterId    String   @map("encounter_id")
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  encounter Encounter @relation(fields: [encounterId], references: [encounterId], onDelete: Cascade)
+  messages  Message[]
+
+  @@map("conversations")
+}
+
+model Message {
+  messageId      String   @id @default(uuid()) @map("message_id")
+  conversationId String   @map("conversation_id")
+  role           String // user | assistant | system | tool
+  content        String
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  conversation Conversation @relation(fields: [conversationId], references: [conversationId], onDelete: Cascade)
+
+  @@map("messages")
+}
+
+// ─── SYMPTOM STATE (Adaptive Questioning — Phase 3 Orchestrator writes here) ─
+model SymptomState {
+  stateId             String    @id @default(uuid()) @map("state_id")
+  encounterId         String    @unique @map("encounter_id")
+  primarySymptom      String?   @map("primary_symptom")
+  onset               String?
+  duration            String?
+  severity            Int? // 0–10
+  character           String?
+  location            String?
+  radiation           String?
+  aggravatingFactors  String?   @map("aggravating_factors")
+  relievingFactors    String?   @map("relieving_factors")
+  associatedSymptoms  Json?     @map("associated_symptoms") // string[]
+  extractionConfidence Float?   @map("extraction_confidence")
+  isComplete          Boolean   @default(false) @map("is_complete")
+  completedAt         DateTime? @map("completed_at")
+  createdAt           DateTime  @default(now()) @map("created_at")
+  updatedAt           DateTime  @updatedAt @map("updated_at")
+
+  encounter Encounter @relation(fields: [encounterId], references: [encounterId], onDelete: Cascade)
+
+  @@map("symptom_states")
+}
+
+// ─── TOOL CALLS & MODEL RUNS (Phase 3 AI audit trail) ────────────────────────
+model ToolCall {
+  toolCallId  String   @id @default(uuid()) @map("tool_call_id")
+  encounterId String   @map("encounter_id")
+  toolName    String   @map("tool_name")
+  arguments   Json
+  result      Json?
+  status      String   @default("pending") // pending | success | error
+  latencyMs   Int?     @map("latency_ms")
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  encounter Encounter @relation(fields: [encounterId], references: [encounterId], onDelete: Cascade)
+
+  @@map("tool_calls")
+}
+
+model ModelRun {
+  runId        String   @id @default(uuid()) @map("run_id")
+  encounterId  String   @map("encounter_id")
+  modelName    String   @map("model_name")
+  modelVersion String   @map("model_version")
+  promptHash   String?  @map("prompt_hash")
+  inputTokens  Int?     @map("input_tokens")
+  outputTokens Int?     @map("output_tokens")
+  latencyMs    Int?     @map("latency_ms")
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  encounter Encounter @relation(fields: [encounterId], references: [encounterId], onDelete: Cascade)
+
+  @@map("model_runs")
+}
+
+// ─── HEALTH EVENTS & TIMELINE ────────────────────────────────────────────────
+model HealthEvent {
+  eventId        String   @id @default(uuid()) @map("event_id")
+  patientId      String   @map("patient_id")
+  encounterId    String?  @map("encounter_id")
+  // eventType values:
+  // diagnosis | symptom | lab_result | medication_start | medication_stop
+  // prescription | doctor_visit | surgery | hospitalization | vital
+  // wearable_event | lifestyle_event | allergy
+  eventType      String   @map("event_type")
+  eventTime      DateTime @map("event_time")
+  summary        String
+  structuredData Json?    @map("structured_data")
+  sourceId       String?  @map("source_id")
+  createdAt      DateTime @default(now()) @map("created_at")
+  provenanceId   String?  @map("provenance_id")
+
+  patient    PatientProfile @relation(fields: [patientId], references: [patientId], onDelete: Cascade)
+  encounter  Encounter?     @relation(fields: [encounterId], references: [encounterId], onDelete: SetNull)
+  provenance Provenance?    @relation(fields: [provenanceId], references: [sourceId])
+
+  @@index([patientId, eventTime(sort: Desc)])
+  @@index([patientId, eventType])
+  @@map("health_events")
+}
+
+// ─── DOCUMENTS ───────────────────────────────────────────────────────────────
+model HealthDocument {
+  documentId       String   @id @default(uuid()) @map("document_id")
+  patientId        String   @map("patient_id")
+  type             String // prescription | lab_report | discharge_summary | imaging | other
+  originalFilename String   @map("original_filename") // display only — NOT used as storage path
+  storageUri       String   @map("storage_uri") // local path (dev) | S3 key (prod)
+  mimeType         String?  @map("mime_type")
+  // extractionStatus: pending | processing | done | failed | review_needed
+  extractionStatus String   @default("pending") @map("extraction_status")
+  uploadedAt       DateTime @default(now()) @map("uploaded_at")
+  createdAt        DateTime @default(now()) @map("created_at")
+  provenanceId     String?  @map("provenance_id")
+
+  patient     PatientProfile  @relation(fields: [patientId], references: [patientId], onDelete: Cascade)
+  provenance  Provenance?     @relation(fields: [provenanceId], references: [sourceId])
+  extractions ExtractedField[]
+
+  @@index([patientId, extractionStatus])
+  @@map("health_documents")
+}
+
+model ExtractedField {
+  fieldId         String    @id @default(uuid()) @map("field_id")
+  documentId      String    @map("document_id")
+  // fieldName values:
+  // medication_name | dose | frequency | route
+  // lab_test | lab_value | lab_unit | lab_reference
+  // diagnosis | allergy | allergy_reaction | allergy_severity
+  // doctor_name | hospital_name | date | other
+  fieldName       String    @map("field_name")
+  rawValue        String    @map("raw_value")
+  normalizedValue String?   @map("normalized_value")
+  rxNormCode      String?   @map("rx_norm_code")
+  loincCode       String?   @map("loinc_code")
+  icdCode         String?   @map("icd_code")
+  confidence      Float // 0.0 – 1.0
+  // status: pending | confirmed | rejected | review_needed
+  status          String    @default("pending")
+  confirmedAt     DateTime? @map("confirmed_at")
+  createdAt       DateTime  @default(now()) @map("created_at")
+  provenanceId    String?   @map("provenance_id")
+
+  document   HealthDocument @relation(fields: [documentId], references: [documentId], onDelete: Cascade)
+  provenance Provenance?    @relation(fields: [provenanceId], references: [sourceId])
+
+  @@index([documentId, status])
+  @@map("extracted_fields")
+}
+
+// ─── WEARABLES ───────────────────────────────────────────────────────────────
+model WearableReading {
+  readingId  String   @id @default(uuid()) @map("reading_id")
+  patientId  String   @map("patient_id")
+  // metric values:
+  // heart_rate | steps | spo2 | sleep_hours | blood_glucose
+  // hrv | respiratory_rate | weight | body_temp
+  // blood_pressure_sys | blood_pressure_dia | calories
+  metric     String
+  value      Float
+  unit       String
+  recordedAt DateTime @map("recorded_at")
+  // source: apple_health | fitbit | garmin | samsung_health | manual
+  source     String?
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  patient PatientProfile @relation(fields: [patientId], references: [patientId], onDelete: Cascade)
+
+  @@index([patientId, metric, recordedAt(sort: Desc)])
+  @@map("wearable_readings")
+}
+
+model WearableTrend {
+  trendId    String   @id @default(uuid()) @map("trend_id")
+  patientId  String   @map("patient_id")
+  metric     String
+  direction  String // rising | falling | stable
+  value      Float // current rolling average
+  baseline   Float // patient's personal baseline
+  unit       String
+  windowDays Int      @default(7) @map("window_days")
+  computedAt DateTime @default(now()) @map("computed_at")
+
+  patient PatientProfile @relation(fields: [patientId], references: [patientId], onDelete: Cascade)
+
+  @@index([patientId, metric])
+  @@map("wearable_trends")
+}
+
+// ─── PROVENANCE (append-only — no UPDATE, no DELETE ever) ────────────────────
+// Every clinical fact must trace back to a Provenance record.
+// This is a regulatory and audit requirement — do not modify this table structure.
+model Provenance {
+  sourceId        String   @id @default(uuid()) @map("source_id")
+  // sourceType: document | manual_entry | wearable | lab_api | user_input
+  sourceType      String   @map("source_type")
+  sourceDate      DateTime @map("source_date")
+  documentId      String?  @map("document_id")
+  pageNumber      Int?     @map("page_number")
+  extractionModel String?  @map("extraction_model")
+  modelVersion    String?  @map("model_version")
+  confidence      Float?
+  // CRITICAL: No updatedAt — Provenance is APPEND-ONLY
+  createdAt       DateTime @default(now()) @map("created_at")
+
+  conditions      MedicalCondition[]
+  allergies       Allergy[]
+  medications     Medication[]
+  labResults      LabResult[]
+  documents       HealthDocument[]
+  extractedFields ExtractedField[]
+  events          HealthEvent[]
+
+  @@map("provenance")
+}
